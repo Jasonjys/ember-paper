@@ -142,7 +142,9 @@ export default Component.extend(FocusableMixin, ColorMixin, ChildMixin, Validati
       if(e.key === 'Enter'){
        this.set('isTouched', true);
      }
-     this.get('onKeyDown')(e);
+     if(this.get('onKeyDown')){
+        this.get('onKeyDown')(e);
+      }
     },
     handleInput(e) {
       this.sendAction('onChange', e.target.value);
