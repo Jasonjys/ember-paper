@@ -2,10 +2,12 @@
  * @module ember-paper
  */
 import Ember from 'ember';
-
+import layout from '../templates/components/paper-slider';
 import FocusableMixin from 'ember-paper/mixins/focusable-mixin';
 import ColorMixin from 'ember-paper/mixins/color-mixin';
-const { Component, computed, inject, String: { htmlSafe } } = Ember;
+import clamp from 'ember-paper/utils/clamp';
+const { Component, computed, inject, run, String: { htmlSafe } } = Ember;
+/* global Hammer */
 
 /**
  * @class PaperSlider
@@ -14,13 +16,13 @@ const { Component, computed, inject, String: { htmlSafe } } = Ember;
  * @uses ColorMixin
  */
 export default Component.extend(FocusableMixin, ColorMixin, {
-
+  layout,
   tagName: 'md-slider',
 
   attributeBindings: ['min', 'max', 'step', 'discrete:md-discrete', 'tabindex'],
 
   classNames: ['md-default-theme'],
-  classNameBindings: ['isMinimum:md-min', 'active', 'dragging'],
+  classNameBindings: ['isMinimum:md-min', 'active', 'dragging:md-dragging'],
 
   constants: inject.service(),
 
@@ -28,10 +30,6 @@ export default Component.extend(FocusableMixin, ColorMixin, {
   max: 100,
   step: 1,
   tabindex: 0,
-
-  trackContainer: computed(function() {
-    return this.$('.md-track-container');
-  }),
 
   activeTrackStyle: computed('percent', function() {
     let percent = this.get('percent') || 0;
@@ -51,11 +49,59 @@ export default Component.extend(FocusableMixin, ColorMixin, {
     let min = parseInt(this.get('min'), 10);
     let max = parseInt(this.get('max'), 10);
 
-    return (this.get('value') - min) / (max - min);
+    return clamp((this.get('value') - min) / (max - min), 0, 1);
   }),
 
+  didInsertElement() {
+    this._super(...arguments);
+    if (!this.get('disabled')) {
+      this._setupHammer();
+    }
+  },
+
+  didUpdateAttrs() {
+    this._super(...arguments);
+
+    if (!this.get('disabled') && !this._hammer) {
+      // if it is enabled and we didn't init hammer yet
+      this._setupHammer();
+    } else if (this.get('disabled') && this._hammer) {
+      // if it is disabled and we did init hammer already
+      this._teardownHammer();
+    }
+  },
+
+  willDestroyElement() {
+    this._super(...arguments);
+    if (this._hammer) {
+      this._teardownHammer();
+    }
+  },
+
+  _setupHammer() {
+    // Enable dragging the slider
+    let containerManager = new Hammer.Manager(this.element);
+    let pan = new Hammer.Pan({ direction: Hammer.DIRECTION_HORIZONTAL, threshold: 10 });
+    containerManager.add(pan);
+    let tap = new Hammer.Tap();
+    containerManager.add(tap);
+
+    containerManager.on('panstart', run.bind(this, this.dragStart))
+      .on('panmove', run.bind(this, this.drag))
+      .on('panend', run.bind(this, this.dragEnd))
+      .on('tap', run.bind(this, this.tap));
+
+    this._hammer = containerManager;
+  },
+
+  _teardownHammer() {
+    this._hammer.destroy();
+    delete this._hammer;
+  },
+
   positionToPercent(x) {
-    return Math.max(0, Math.min(1, (x - this.get('sliderDimensions.left')) / this.get('sliderDimensions.width')));
+    let { left, width } = this.sliderDimensions();
+    return Math.max(0, Math.min(1, (x - left) / width));
   },
 
   percentToValue(x) {
@@ -77,20 +123,28 @@ export default Component.extend(FocusableMixin, ColorMixin, {
 
   active: false,
   dragging: false,
+  enabled: computed.not('disabled'),
 
-  sliderDimensions: computed(function() {
-    return this.get('trackContainer')[0].getBoundingClientRect();
-  }),
-
-  setValueFromEvent(event) {
-    // let exactVal = this.percentToValue(this.positionToPercent(event.deltaX || event.clientX));
-    let exactVal = this.percentToValue(this.positionToPercent(event.clientX || event.originalEvent.touches[0].clientX));
-    let closestVal = this.minMaxValidator(this.stepValidator(exactVal));
-
-    this.set('value', closestVal);
+  sliderDimensions() {
+    return this.$('.md-track-container').get(0).getBoundingClientRect();
   },
 
-  down(event) {
+  setValueFromEvent(value) {
+    let exactVal = this.percentToValue(this.positionToPercent(value));
+    let closestVal = this.minMaxValidator(this.stepValidator(exactVal));
+
+    this.sendAction('onChange', closestVal);
+  },
+
+  tap(event) {
+    if (this.get('disabled')) {
+      return;
+    }
+
+    this.setValueFromEvent(event.center.x);
+  },
+
+  dragStart(event) {
     if (this.get('disabled')) {
       return;
     }
@@ -99,31 +153,26 @@ export default Component.extend(FocusableMixin, ColorMixin, {
     this.set('dragging', true);
     this.$().focus();
 
-    this.get('sliderDimensions');
-
-    this.setValueFromEvent(event);
+    this.setValueFromEvent(event.center.x);
   },
 
-  up(event) {
-    if (this.get('disabled')) {
-      return;
-    }
-
-    event.stopPropagation();
-
-    this.beginPropertyChanges();
-    this.set('active', false);
-    this.set('dragging', false);
-    this.endPropertyChanges();
-  },
-
-  move(event) {
+  drag(event) {
     if (this.get('disabled') || !this.get('dragging')) {
       return;
     }
 
-    this.setValueFromEvent(event);
+    this.setValueFromEvent(event.center.x);
+  },
 
+  dragEnd() {
+    if (this.get('disabled')) {
+      return;
+    }
+
+    this.setProperties({
+      active: false,
+      dragging: false
+    });
   },
 
   keyDown(event) {
@@ -146,7 +195,7 @@ export default Component.extend(FocusableMixin, ColorMixin, {
 
       newValue = this.get('value') + changeAmount;
 
-      this.set('value', this.minMaxValidator(newValue));
+      this.sendAction('onChange', this.minMaxValidator(newValue));
 
       event.preventDefault();
       event.stopPropagation();

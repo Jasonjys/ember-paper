@@ -4,7 +4,7 @@ const { computed } = Ember;
 
 export default BasicTrigger.extend({
   tagName: 'md-autocomplete',
-  attributeBindings: ['label:md-floating-label','disabled:disabled'],
+  attributeBindings: ['label:md-floating-label', 'disabled:disabled'],
   disabled: computed('disabledProxy', function() {
     return this.get('disabledProxy') ? this.get('disabledProxy') : undefined;
   }),
@@ -31,7 +31,7 @@ export default BasicTrigger.extend({
       });
     }
     this.element.addEventListener('mousedown', (e) => this.send('handleMousedown', e));
-    this.element.addEventListener('keydown', (e) => this.send('handleKeydown', e));
+    this.element.addEventListener('keydown', (e) => this.send('handleKeyDown', e));
   },
 
   actions: {

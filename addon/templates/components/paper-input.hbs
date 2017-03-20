@@ -3,7 +3,7 @@
 {{/if}}
 
 {{#if icon}}
-  {{paper-icon icon}}
+  {{component iconComponent icon}}
 {{/if}}
 
 {{#if textarea}}
@@ -46,6 +46,8 @@
 
     accept={{passThru.accept}}
     autocomplete={{passThru.autocomplete}}
+    autocorrect={{passThru.autocorrect}}
+    autocapitalize={{passThru.autocapitalize}}
     autosave={{passThru.autosave}}
     form={{passThru.form}}
     formaction={{passThru.formaction}}
@@ -89,6 +91,15 @@
   {{/if}}
 {{/unless}}
 
+{{yield (hash
+  charCount=currentLength
+  isInvalid=isInvalid
+  isTouched=isTouched
+  isInvalidAndTouched=isInvalidAndTouched
+  hasValue=hasValue
+  validationErrorMessages=validationErrorMessages
+)}}
+
 {{#if iconRight}}
-  {{paper-icon iconRight}}
+  {{component iconComponent iconRight}}
 {{/if}}

@@ -12,20 +12,41 @@ var AngularScssFilter = require('./lib/angular-scss-filter');
 module.exports = {
   name: 'ember-paper',
 
-  included: function(app) {
+  included: function() {
     this._super.included.apply(this, arguments);
 
-    if (!process.env.EMBER_CLI_FASTBOOT) {
-      app.import(app.bowerDirectory + '/hammer.js/hammer.js')
-      app.import(app.bowerDirectory + '/matchMedia/matchMedia.js');
-      app.import('vendor/propagating.js');
+    var app;
+
+    // If the addon has the _findHost() method (in ember-cli >= 2.7.0), we'll just
+    // use that.
+    if (typeof this._findHost === 'function') {
+      app = this._findHost();
+    } else {
+      // Otherwise, we'll use this implementation borrowed from the _findHost()
+      // method in ember-cli.
+      var current = this;
+      do {
+        app = current.app || app;
+      } while (current.parent.parent && (current = current.parent));
     }
+
+    if (!process.env.EMBER_CLI_FASTBOOT) {
+      app.import('vendor/hammerjs/hammer.js');
+      app.import('vendor/matchmedia-polyfill/matchMedia.js');
+      app.import('vendor/propagating-hammerjs/propagating.js');
+    }
+  },
+
+  config(env, baseConfig) {
+    return { 'ember-paper': { insertFontLinks: true } };
   },
 
   contentFor: function(type, config) {
     if (type === 'head') {
-      return '<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700,400italic">' +
-        '<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">';
+      if (config['ember-paper'].insertFontLinks) {
+        return '<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700,400italic">' +
+          '<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">';
+      }
     } else if (type === 'body-footer') {
       var emberPowerSelect = this.addons.filter(function(addon) {
         return addon.name === 'ember-power-select';
@@ -34,10 +55,37 @@ module.exports = {
     }
   },
 
+  treeForVendor: function(tree) {
+    var trees = [];
+
+    if (!process.env.EMBER_CLI_FASTBOOT) {
+      var hammerJs = new Funnel(this.pathBase('hammerjs'), {
+        files: [ 'hammer.js' ],
+        destDir: 'hammerjs'
+      });
+      var matchMediaPolyfill = new Funnel(this.pathBase('matchmedia-polyfill'), {
+        files: [ 'matchMedia.js' ],
+        destDir: 'matchmedia-polyfill'
+      });
+      var propagatingHammerJs = new Funnel(this.pathBase('propagating-hammerjs'), {
+        files: [ 'propagating.js' ],
+        destDir: 'propagating-hammerjs'
+      });
+      trees = trees.concat([hammerJs, matchMediaPolyfill, propagatingHammerJs]);
+    }
+
+    if (tree) {
+      trees.push(tree);
+    }
+
+    return mergeTrees(trees);
+  },
+
   treeForStyles: function(tree) {
     var scssFiles = [
       //core styles
       'core/style/typography.scss',
+      'core/style/themes.scss',
       'core/style/mixins.scss',
       'core/style/variables.scss',
       'core/style/structure.scss',
@@ -116,8 +164,9 @@ module.exports = {
       'components/chips/chips-theme.scss'
     ];
 
-    var angularScssFiles = new Funnel(this.pathBase(), {
+    var angularScssFiles = new Funnel(this.pathBase('angular-material-source'), {
       files: scssFiles,
+      srcDir: '/src',
       destDir: 'angular-material',
       annotation: 'AngularScssFunnel'
     });
@@ -141,8 +190,8 @@ module.exports = {
     tl;dr - We want the non built scss files, and b/c this dep is only provided via
     bower, we use this hack. Please change it if you read this and know a better way.
   */
-  pathBase: function() {
-    return path.dirname(resolve.sync('angular-material-source/package.json', { basedir: __dirname })) + '/src';
+  pathBase: function(packageName) {
+    return path.dirname(resolve.sync(packageName + '/package.json', { basedir: __dirname }));
   },
 
   postprocessTree: function(type, tree) {
@@ -151,10 +200,5 @@ module.exports = {
           this.app.options.autoprefixer || { browsers: ['last 2 versions'] });
     }
     return tree;
-  },
-
-  // TODO: Remove once ember-paper is stable.
-  isDevelopingAddon: function() {
-    return true;
   }
 };
